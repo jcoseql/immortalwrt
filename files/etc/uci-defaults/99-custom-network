@@ -1,0 +1,37 @@
+#!/bin/sh
+
+# Radxa Dual 2.5G HAT 方案：
+#   eth0 + eth1 = R8125 2.5G 网口 → br-lan (192.168.10.1)
+#   eth2        = Pi5 板载网口     → WAN (DHCP)
+
+# 清理 board.d 自动生成的 LAN 配置（防冲突）
+uci -q del network.lan
+uci -q del network.wan
+uci -q del network.wan6
+
+# 新建 LAN 桥
+uci set network.lan=interface
+uci set network.lan.device='br-lan'
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr='192.168.10.1'
+uci set network.lan.netmask='255.255.255.0'
+uci set network.lan.ip6assign='60'
+
+uci set network.lan_device=device
+uci set network.lan_device.name='br-lan'
+uci set network.lan_device.type='bridge'
+uci add_list network.lan_device.ports='eth0'
+uci add_list network.lan_device.ports='eth1'
+
+# WAN（板载网口）
+uci set network.wan=interface
+uci set network.wan.device='eth2'
+uci set network.wan.proto='dhcp'
+
+uci set network.wan6=interface
+uci set network.wan6.device='eth2'
+uci set network.wan6.proto='dhcpv6'
+
+uci commit network
+
+exit 0

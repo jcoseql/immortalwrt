@@ -1,2 +1,1 @@
 0 * * * * /usr/local/bin/update_hosts.sh >> /var/log/hosts_sync.log 2>&1
-30 6 * * * /mnt/mmc0-4/daed/update_rules.sh >> /var/log/daed_sync.log 2>&1
