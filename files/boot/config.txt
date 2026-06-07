@@ -1,0 +1,3 @@
+# Hermes Custom - Radxa Dual 2.5G HAT PCIe Gen3
+dtparam=pciex1
+dtparam=pciex1_gen=3
