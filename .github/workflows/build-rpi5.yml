@@ -10,7 +10,7 @@ env:
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: rpi5.config
   DIY_PST_SH: diy-post.sh
-  FILES_DIR: files
+  CUSTOM_FILES_DIR: files
   TZ: Asia/Shanghai
 
 jobs:
@@ -59,7 +59,7 @@ jobs:
     - name: Load custom configuration
       run: |
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        [ -d $FILES_DIR ] && mv $FILES_DIR openwrt/files
+        [ -d $CUSTOM_FILES_DIR ] && mv $CUSTOM_FILES_DIR openwrt/files
         cd openwrt
         # 强制将种子配置展开成完整编译配置
         make defconfig
