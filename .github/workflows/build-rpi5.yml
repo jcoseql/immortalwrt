@@ -39,7 +39,7 @@ jobs:
       run: |
         df -hT $PWD
         git clone $REPO_URL -b $REPO_BRANCH immortalwrt
-        ln -sf /workdir/ immortalwrt $GITHUB_WORKSPACE/openwrt
+        ln -sf /workdir/immortalwrt $GITHUB_WORKSPACE/openwrt
 
     # 💥 核心防薅羊毛机制：拉满 GitHub Cache 缓存，第二次编译 15 分钟直接吐固件
     - name: Cache dl Directory
