@@ -65,19 +65,6 @@ jobs:
         make defconfig
 
     # 🐳 docker-compose 二进制注入（上游 Go 交叉编译有 bug，改用官方预编译二进制）
-    - name: Inject docker-compose binary
-      run: |
-        COMPOSE_VERSION="v5.1.4"
-        echo "Downloading docker-compose ${COMPOSE_VERSION} for aarch64..."
-        mkdir -p openwrt/files/usr/libexec/docker/cli-plugins
-        curl -sL -o openwrt/files/usr/libexec/docker/cli-plugins/docker-compose \
-          "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-aarch64"
-        chmod +x openwrt/files/usr/libexec/docker/cli-plugins/docker-compose
-        ls -lh openwrt/files/usr/libexec/docker/cli-plugins/docker-compose
-
-    - name: Download package
-      id: package
-      run: |
         cd openwrt
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
