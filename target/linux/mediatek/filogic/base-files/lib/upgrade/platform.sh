@@ -35,9 +35,20 @@ jiorouter_initial_setup()
 	fi
 
 	ubidetach -m "$mtdnum" 2>/dev/null
-	ubiformat /dev/mtd$mtdnum -y
-	ubiattach -m "$mtdnum"
-	ubimkvol /dev/ubi0 -n 0 -N u-boot-env -s 0x80000
+	ubiformat /dev/mtd$mtdnum -y || exit 1
+	ubiattach -m "$mtdnum" || exit 1
+
+	local ubidev="$(nand_find_ubi ubi)"
+	[ -n "$ubidev" ] || { echo "cannot attach ubi"; exit 1; }
+
+	if ! ubimkvol /dev/$ubidev -n 0 -N u-boot-env -s 0x80000; then
+		echo "failed to create u-boot-env volume - aborting"
+		exit 1
+	fi
+
+	local envdev="$(nand_find_volume "$ubidev" u-boot-env)"
+	[ -n "$envdev" ] || { echo "cannot find u-boot-env volume - aborting"; exit 1; }
+	echo "/dev/$envdev 0x0 0x80000 0x1f000 5" > /etc/fw_env.config
 
 	# Set boot arguments in freshly created U-Boot environment
 	fw_setenv bootcmd 'ubi read 46000000 kernel;fdt addr $(fdtcontroladdr);fdt rm /signature;bootm 0x46000000'
@@ -130,6 +141,20 @@ update_oem_ubi_volume() {
 	ubiupdatevol "/dev/$ubidev" -s "$oem_volume_size" "$oem_volume_data"
 }
 
+# Write both volume sets used by the MediaTek SDK bootloader, so that
+# whichever of the two it ends up selecting carries the new firmware.
+mtk_dual_boot_flash_both_slots() {
+	echo "UPGRADING SECOND SLOT"
+	CI_KERNPART="kernel2"
+	CI_ROOTPART="rootfs2"
+	nand_do_flash_file "$1" || nand_do_upgrade_failed
+
+	echo "UPGRADING PRIMARY SLOT"
+	CI_KERNPART="kernel"
+	CI_ROOTPART="rootfs"
+	nand_do_flash_file "$1" || nand_do_upgrade_failed
+}
+
 platform_do_upgrade() {
 	local board=$(board_name)
 
@@ -143,12 +168,17 @@ platform_do_upgrade() {
 	bananapi,bpi-r4-2g5|\
 	bananapi,bpi-r4-poe|\
 	bananapi,bpi-r4-lite|\
+	bananapi,bpi-r4-pro-8x|\
 	bazis,ax3000wm|\
 	cetron,ct3003-ubootmod|\
 	cmcc,a10-ubootmod|\
 	cmcc,rax3000m|\
 	cmcc,rax3000me|\
+	comfast,cf-wr632ax-ubi|\
 	comfast,cf-wr632ax-ubootmod|\
+	creatlentem,clt-r30b1-ubi|\
+	cudy,m3000-v1-ubootmod|\
+	cudy,m3000-v2-yt8821-ubootmod|\
 	cudy,tr3000-v1-ubootmod|\
 	cudy,wbr3000uax-v1-ubootmod|\
 	cudy,wr3000e-v1-ubootmod|\
@@ -156,6 +186,7 @@ platform_do_upgrade() {
 	cudy,wr3000h-v1-ubootmod|\
 	cudy,wr3000p-v1-ubootmod|\
 	gatonetworks,gdsp|\
+	globitel,bt-r320|\
 	h3c,magic-nx30-pro|\
 	imou,hx21|\
 	jcg,q30-pro|\
@@ -164,8 +195,10 @@ platform_do_upgrade() {
 	livinet,zr-3020-ubootmod|\
 	mediatek,mt7981-rfb|\
 	mediatek,mt7988a-rfb|\
+	mercusys,mr85x-ubi|\
 	mercusys,mr90x-v1-ubi|\
 	netis,eap930-v1|\
+	netis,n6-v2|\
 	netis,nx30v2|\
 	netis,nx31|\
 	netis,nx32u|\
@@ -178,9 +211,12 @@ platform_do_upgrade() {
 	routerich,ax3000-ubootmod|\
 	routerich,be7200|\
 	snr,snr-cpe-ax2|\
+	teralink,tl3020-256mb|\
+	tplink,be450-ubi|\
 	tplink,tl-7dr7230-v1|\
 	tplink,tl-7dr7230-v2|\
 	tplink,tl-7dr7250-v1|\
+	tplink,tl-7dr7299-v1|\
 	tplink,tl-xdr4288|\
 	tplink,tl-xdr6086|\
 	tplink,tl-xdr6088|\
@@ -203,19 +239,48 @@ platform_do_upgrade() {
 	glinet,gl-mt6000|\
 	glinet,gl-x3000|\
 	glinet,gl-xe3000|\
-	globitel,bt-r320|\
+	hiveton,h5000m|\
 	huasifei,wh3000-emmc|\
 	huasifei,wh3000-pro-emmc|\
 	smartrg,sdg-8612|\
 	smartrg,sdg-8614|\
 	smartrg,sdg-8622|\
 	smartrg,sdg-8632|\
+	smartrg,sdg-8712|\
+	smartrg,sdg-8732|\
 	smartrg,sdg-8733|\
 	smartrg,sdg-8733a|\
 	smartrg,sdg-8734)
 		CI_KERNPART="kernel"
 		CI_ROOTPART="rootfs"
 		emmc_do_upgrade "$1"
+		;;
+	airtel,aap4221zy)
+		# ZyXEL zloader requires a "zyfwinfo" UBI volume with valid
+		# metadata (magic + checksum) to select the boot partition.
+		# Without it, zloader refuses to boot the firmware. It has to be
+		# written before nand_do_upgrade(), which sizes rootfs_data to
+		# fill the remaining space.
+		local ubidev="$(nand_attach_ubi "${CI_UBIPART:-ubi}")"
+		[ "$ubidev" ] || nand_do_upgrade_failed
+		local vol="$(nand_find_volume "$ubidev" zyfwinfo)"
+		if [ ! "$vol" ]; then
+			# rootfs_data may occupy all LEBs, nand_do_upgrade() recreates it
+			[ "$(nand_find_volume "$ubidev" rootfs_data)" ] && \
+				ubirmvol /dev/$ubidev -N rootfs_data
+			if ! ubimkvol /dev/$ubidev -N zyfwinfo -s 256 -t dynamic; then
+				echo "cannot create zyfwinfo volume"
+				nand_do_upgrade_failed
+			fi
+			vol="$(nand_find_volume "$ubidev" zyfwinfo)"
+		fi
+		local tmpfile="/tmp/zyfwinfo.bin"
+		echo -n -e '\x45\x58\x59\x5A\x02\x00\xB3\x15\x00\x01\x00\x00' > "$tmpfile"
+		dd if=/dev/zero bs=1 count=242 >> "$tmpfile" 2>/dev/null
+		echo -n -e '\x1B\x02' >> "$tmpfile"
+		ubiupdatevol /dev/$vol -s 256 "$tmpfile"
+		rm -f "$tmpfile"
+		nand_do_upgrade "$1"
 		;;
 	asus,rt-ax52|\
 	asus,rt-ax57m|\
@@ -234,6 +299,7 @@ platform_do_upgrade() {
 	xiaomi,redmi-router-ax6000-stock)
 		CI_KERN_UBIPART="ubi_kernel"
 		CI_ROOT_UBIPART="ubi"
+		CI_DATA_UBIPART="ubi"
 		nand_do_upgrade "$1"
 		;;
 	buffalo,wsr-6000ax8|\
@@ -241,7 +307,8 @@ platform_do_upgrade() {
 	cudy,wr3000p-v1|\
 	huasifei,wh3000-pro-nand|\
 	huasifei,wh3000r-nand|\
-	jiorouter,ax6000-jidu6101)
+	jiorouter,ax6000-jidu6101|\
+	jiorouter,ax6000-jidu6j01)
 		CI_UBIPART="ubi"
 		nand_do_upgrade "$1"
 		;;
@@ -250,7 +317,6 @@ platform_do_upgrade() {
 	kebidumei,ax3000-u22|\
 	totolink,x6000r|\
 	wavlink,wl-wn573hx3|\
-	wavlink,wl-wnt100x3|\
 	widelantech,wap430x|\
 	yuncore,ax835)
 		default_do_upgrade "$1"
@@ -288,15 +354,15 @@ platform_do_upgrade() {
 		CI_UBIPART="ubi0"
 		nand_do_upgrade "$1"
 		;;
+	ltc,vl7m19k)
+		mtk_dual_boot_flash_both_slots "$1"
+		# clear any marker the bootloader set after failing to verify
+		fw_setenv dual_boot.slot_0_invalid 0
+		fw_setenv dual_boot.slot_1_invalid 0
+		nand_do_upgrade_success
+		;;
 	netgear,eax17)
-		echo "UPGRADING SECOND SLOT"
-		CI_KERNPART="kernel2"
-		CI_ROOTPART="rootfs2"
-		nand_do_flash_file "$1" || nand_do_upgrade_failed
-		echo "UPGRADING PRIMARY SLOT"
-		CI_KERNPART="kernel"
-		CI_ROOTPART="rootfs"
-		nand_do_flash_file "$1" || nand_do_upgrade_failed
+		mtk_dual_boot_flash_both_slots "$1"
 		nand_do_upgrade_success
 		;;
 	tplink,fr365-v1|\
@@ -361,12 +427,17 @@ platform_check_image() {
 	bananapi,bpi-r4-2g5|\
 	bananapi,bpi-r4-poe|\
 	bananapi,bpi-r4-lite|\
+	bananapi,bpi-r4-pro-8x|\
 	bazis,ax3000wm|\
 	cetron,ct3003-ubootmod|\
 	cmcc,a10-ubootmod|\
 	cmcc,rax3000m|\
 	cmcc,rax3000me|\
+	comfast,cf-wr632ax-ubi|\
 	comfast,cf-wr632ax-ubootmod|\
+	creatlentem,clt-r30b1-ubi|\
+	cudy,m3000-v1-ubootmod|\
+	cudy,m3000-v2-yt8821-ubootmod|\
 	cudy,tr3000-v1-ubootmod|\
 	cudy,wbr3000uax-v1-ubootmod|\
 	cudy,wr3000e-v1-ubootmod|\
@@ -374,6 +445,7 @@ platform_check_image() {
 	cudy,wr3000h-v1-ubootmod|\
 	cudy,wr3000p-v1-ubootmod|\
 	gatonetworks,gdsp|\
+	globitel,bt-r320|\
 	h3c,magic-nx30-pro|\
 	imou,lc-hx3001|\
 	jcg,q30-pro|\
@@ -382,9 +454,11 @@ platform_check_image() {
 	livinet,zr-3020-ubootmod|\
 	mediatek,mt7981-rfb|\
 	mediatek,mt7988a-rfb|\
+	mercusys,mr85x-ubi|\
 	mercusys,mr90x-v1-ubi|\
 	nokia,ea0326gmp|\
 	netis,eap930-v1|\
+	netis,n6-v2|\
 	netis,nx32u|\
 	openwrt,one|\
 	netcore,n60|\
@@ -392,6 +466,8 @@ platform_check_image() {
 	qihoo,360t7|\
 	qihoo,360t7-ubi|\
 	routerich,ax3000-ubootmod|\
+	teralink,tl3020-256mb|\
+	tplink,be450-ubi|\
 	tplink,tl-7dr7230-v1|\
 	tplink,tl-7dr7230-v2|\
 	tplink,tl-7dr7250-v1|\
@@ -409,6 +485,7 @@ platform_check_image() {
 		;;
 	creatlentem,clt-r30b1|\
 	creatlentem,clt-r30b1-112m|\
+	hiveton,h5000m|\
 	nradio,c8-668gl)
 		# tar magic `ustar`
 		magic="$(dd if="$1" bs=1 skip=257 count=5 2>/dev/null)"
@@ -442,6 +519,7 @@ platform_copy_config() {
 	glinet,gl-x3000|\
 	glinet,gl-xe3000|\
 	globitel,bt-r320|\
+	hiveton,h5000m|\
 	huasifei,wh3000-emmc|\
 	huasifei,wh3000-pro-emmc|\
 	jdcloud,re-cp-03|\
@@ -450,6 +528,8 @@ platform_copy_config() {
 	smartrg,sdg-8614|\
 	smartrg,sdg-8622|\
 	smartrg,sdg-8632|\
+	smartrg,sdg-8712|\
+	smartrg,sdg-8732|\
 	smartrg,sdg-8733|\
 	smartrg,sdg-8733a|\
 	smartrg,sdg-8734|\
@@ -462,6 +542,7 @@ platform_copy_config() {
 	bananapi,bpi-r4-2g5|\
 	bananapi,bpi-r4-poe|\
 	bananapi,bpi-r4-lite|\
+	bananapi,bpi-r4-pro-8x|\
 	cmcc,rax3000m|\
 	cmcc,rax3000me|\
 	gatonetworks,gdsp|\
@@ -501,7 +582,8 @@ platform_pre_upgrade() {
 		[ -z "$delay" ] || [ "$delay" -eq "0" ] && \
 			fw_setenv bootmenu_delay 3
 		;;
-	jiorouter,ax6000-jidu6101)
+	jiorouter,ax6000-jidu6101|\
+	jiorouter,ax6000-jidu6j01)
 		jiorouter_initial_setup
 		;;
 	xiaomi,mi-router-ax3000t|\

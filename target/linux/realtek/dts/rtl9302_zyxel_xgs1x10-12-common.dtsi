@@ -65,7 +65,8 @@
 
 		/* [Lime] [Blue] */
 		led_set2 = <(RTL93XX_LED_SET_5G | RTL93XX_LED_SET_2P5G | RTL93XX_LED_SET_1G |
-			     RTL93XX_LED_SET_LINK | RTL93XX_LED_SET_ACT)
+			     RTL93XX_LED_SET_100M | RTL93XX_LED_SET_10M | RTL93XX_LED_SET_LINK |
+			     RTL93XX_LED_SET_ACT)
 			    (RTL93XX_LED_SET_10G | RTL93XX_LED_SET_5G | RTL93XX_LED_SET_2P5G |
 			     RTL93XX_LED_SET_LINK | RTL93XX_LED_SET_ACT)>;
 	};
@@ -92,14 +93,20 @@
 	 * reset-gpios = <&gpio0 21 GPIO_ACTIVE_LOW>;
 	 * disabled because we do not know how to bring up again
 	 */
-	PHY_C22(0, 0)
-	PHY_C22(1, 1)
-	PHY_C22(2, 2)
-	PHY_C22(3, 3)
-	PHY_C22(4, 4)
-	PHY_C22(5, 5)
-	PHY_C22(6, 6)
-	PHY_C22(7, 7)
+	ethernet-phy-package@0 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0>;
+
+		PHY_C22(0, 0)
+		PHY_C22(1, 1)
+		PHY_C22(2, 2)
+		PHY_C22(3, 3)
+		PHY_C22(4, 4)
+		PHY_C22(5, 5)
+		PHY_C22(6, 6)
+		PHY_C22(7, 7)
+	};
 };
 
 &switch0 {

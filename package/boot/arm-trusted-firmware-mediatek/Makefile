@@ -273,11 +273,12 @@ define Trusted-Firmware-A/mt7981-spim-nand-ubi-ddr4
 endef
 
 define Trusted-Firmware-A/mt7981-cudy-ddr3
-  NAME:=Cudy (SPI-NAND via SPIM, DDR3)
+  NAME:=Cudy (SPI-NAND via SPIM, DDR3 1866 MT/s)
   BOOT_DEVICE:=spim-nand
   BUILD_SUBTARGET:=filogic
   PLAT:=mt7981
   DDR_TYPE:=ddr3
+  DDR3_FREQ_1866:=1
   FIP_OFFSET:=0x3c0000
   FIP_SIZE:=0x200000
 endef
@@ -711,6 +712,16 @@ define Trusted-Firmware-A/mt7988-spim-nand-ubi-comb-4bg
   USE_UBI:=1
 endef
 
+define Trusted-Firmware-A/mt7988-tplink-tl-7dr7299-comb
+  NAME:=MediaTek MT7988 (SPI-NAND via SPIM)
+  BOOT_DEVICE:=spim-nand
+  BUILD_SUBTARGET:=filogic
+  PLAT:=mt7988
+  DRAM_USE_COMB:=1
+  FIP_OFFSET:=0x580000
+  FIP_SIZE:=0x100000
+endef
+
 TFA_TARGETS:= \
 	mt7622-nor-1ddr \
 	mt7622-nor-2ddr \
@@ -789,7 +800,8 @@ TFA_TARGETS:= \
 	mt7988-spim-nand-ubi-ddr4 \
 	mt7988-emmc-comb-4bg \
 	mt7988-sdmmc-comb-4bg \
-	mt7988-spim-nand-ubi-comb-4bg
+	mt7988-spim-nand-ubi-comb-4bg \
+	mt7988-tplink-tl-7dr7299-comb
 
 TFA_MAKE_FLAGS += \
 	BOOT_DEVICE=$(BOOT_DEVICE) \
