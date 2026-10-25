@@ -7,6 +7,14 @@
 #include "mirror.h"
 #include "rtl-otto.h"
 
+#define RTL930X_MIR_CTRL			(0xA2A0)
+#define RTL930X_MIR_DPM_CTRL			(0xA2C0)
+#define RTL930X_MIR_SPM_CTRL			(0xA2B0)
+
+#define RTL931X_MIR_CTRL			(0xAF00)
+#define RTL931X_MIR_DPM_CTRL			(0xAF30)
+#define RTL931X_MIR_SPM_CTRL			(0xAF10)
+
 int rtldsa_838x_get_mirror_config(struct rtldsa_mirror_config *config, int group, int port)
 {
 	config->ctrl = RTL838X_MIR_CTRL + group * 4;
@@ -87,7 +95,7 @@ int rtldsa_port_mirror_add(struct dsa_switch *ds, int port,
 			   bool ingress, struct netlink_ext_ack *extack)
 {
 	/* We support 4 mirror groups, one destination port per group */
-	struct rtl838x_switch_priv *priv = ds->priv;
+	struct otto_dsa_priv *priv = ds->priv;
 	struct rtldsa_mirror_config config;
 	int err = 0;
 	int pm_reg;
@@ -149,7 +157,7 @@ out_unlock:
 void rtldsa_port_mirror_del(struct dsa_switch *ds, int port,
 			    struct dsa_mall_mirror_tc_entry *mirror)
 {
-	struct rtl838x_switch_priv *priv = ds->priv;
+	struct otto_dsa_priv *priv = ds->priv;
 	struct rtldsa_mirror_config config;
 	int group = 0;
 	int r;
